@@ -1,46 +1,56 @@
+// producer.cpp
+
+#include "common.hpp"
 #include <iostream>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include <semaphore.h>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <cstring>
 #include <cstdlib>
 
-#define TABLE_SIZE 2
-
-struct Table {
-    int buffer[TABLE_SIZE];
-    int count;
-};
-
 int main() {
-    int smh_fd = shm_open("/table", O_CREAT | O_RDWR, 066);
-    ftruncate(smh_fd, sizeof(Table));
-    Table* table = (Table*) mmap(0, sizeof(Table), PROT_READ | PROT_WRITE, MAP_SHARED, smh_fd, 0);
 
-    table->count = 0;
-    for (int i = 0; i < TABLE_SIZE; ++i) table->buffer[i] = 0;
+    //shared mem
+    int shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
+    if (shm_fd == -1) {
+        perror("shm_open");
+        std::exit(EXIT_FAILURE);
+    }
 
-    sem_t* empty = sem_open("/empty", O_CREAT, 0644, TABLE_SIZE);   // 2 slots
-    sem_t* full = sem_open("/full", O_CREAT, 0644, 0);              // 0 slots
-    sem_t* mutex = sem_open("/mutex", O_CREAT, 0644, 1);   
-    
+    ftruncate(shm_fd, sizeof(SharedTable));
+    void* addr = mmap(nullptr, sizeof(SharedTable), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (addr == MAP_FAILED) {
+        perror("mmap");
+        std::exit(EXIT_FAILURE);
+    }
+
+    SharedTable* table = static_cast <SharedTable*> (addr);
+    std::memset(table, 0, sizeof(SharedTable));
+
+    //semaphores
+    sem_t* mutex = sem_open(SEM_MUTEX_NAME, O_CREAT, 0666, 1);
+    sem_t* empty = sem_open(SEM_EMPTY_NAME, O_CREAT, 0666, TABLE_SIZE);
+    sem_t* full = sem_open(SEM_EMPTY_NAME, O_CREAT, 0666, 0);
+
+    if (mutex == SEM_FAILED || empty == SEM_FAILED || full == SEM_FAILED) {
+        perror("sem_open");
+        std::exit(EXIT_FAILURE);
+    }
+
+    int item = 0;
     while (true) {
-        int item = rand()%100;
+        sem_wait(empty);    // wait if table is full
+        sem_wait(mutex);    //enter CS
 
-        sem_wait(empty);
-
-        sem_wait(mutex);
-
-        table->buffer[table->count] = item;
-        table->count++;
-
-        std::cout << "Producer produces: " << item << " | Items on the table: " << table->count << std::endl; 
+        // produce item
+        table-> Table_items[table->count++] = item++;
+        std::cout << "[Producer] Produced item: " << item << " | Count: " << table->count <<std::endl;
 
         sem_post(mutex);
-
         sem_post(full);
 
-        usleep((rand() % 100 + 50) * 1000);
+        sleep(1);
     }
 
     return 0;

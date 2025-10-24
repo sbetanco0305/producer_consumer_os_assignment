@@ -1,45 +1,51 @@
+// concumer.cpp
+
+#include "common.hpp"
 #include <iostream>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include <semaphore.h>
+#include <sys/stat.h>
 #include <unistd.h>
-
-#define TABLE_SIZE 2
-
-struct Table {
-    int buffer[TABLE_SIZE];
-    int count;
-};
+#include <cstring>
+#include <cstdlib>
 
 int main() {
-    int smh_fd = shm_open("/table", O_RDWR, 0666);
-    if (smh_fd == -1) {
-        std::cerr << "Error: could not open shared memory." << std::endl;
-        return 1;
+    // open shared mem
+    int shm_fd = shm_open(SHM_NAME, O_RDWR, 0666);
+    if (shm_fd == -1) {
+        perror("shm_open");
+        std::exit(EXIT_FAILURE);
     }
 
-    Table* table = (Table*) mmap(0, sizeof(Table), PROT_READ | PROT_WRITE, MAP_SHARED, smh_fd, 0);
-    if (table == MAP_FAILED) {
-        std::cerr << "Error: Map failed." << std::endl;
-        return 1;
+    void* addr = mmap(nullptr, sizeof(SharedTable), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (addr == MAP_FAILED) {
+        perror("mmap");
+        std::exit(EXIT_FAILURE);
     }
 
-    sem_t* empty = sem_open("/empty", 0);
-    sem_t* full = sem_open("full", 0);
-    sem_t* mutex = sem_open("/mutex", 0);
+    SharedTable* table = static_cast<SharedTable*>(addr);
+    
+    //open semaphores
+    sem_t* mutex = sem_open(SEM_MUTEX_NAME, 0);
+    sem_t* empty = sem_open(SEM_EMPTY_NAME, 0);
+    sem_t* full = sem_open(SEM_FULL_NAME, 0);
 
-    while (true) {
+    if (mutex == SEM_FAILED || empty == SEM_FAILED || full == SEM_FAILED) {
+        perror("sem_open");
+        std::exit(EXIT_FAILURE);
+    }
+
+    while(true) {
         sem_wait(full);
         sem_wait(mutex);
 
-        int item = table->buffer[table->count - 1];
-        table->count--;
-
-        std::cout << "Consumer consumes: " << item << "| Items on the table: " << table->count << std::endl;
+        int item = table->Table_items[--table->count];
+        std::cout << "[Consumer] consumed item: " << item << " | Count: " << table->count << std::endl;
 
         sem_post(mutex);
-        sem_post(empty);
-        usleep((rand() % 100 + 5) * 1000);
+        sem_post(full);
+
+        sleep(2);
     }
 
     return 0;

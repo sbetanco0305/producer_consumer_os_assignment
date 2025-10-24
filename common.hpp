@@ -5,7 +5,7 @@
 #include <semaphore.h>
 
 //shared mem
-#define SEM_NAME "/prodcons_shm"
+#define SHM_NAME "/prodcons_shm"
 #define SEM_MUTEX_NAME "/sem_mutex"
 #define SEM_EMPTY_NAME "/sem_empty"
 #define SEM_FULL_NAME "/sem_full"
